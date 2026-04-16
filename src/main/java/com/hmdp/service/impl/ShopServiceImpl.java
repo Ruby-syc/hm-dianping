@@ -48,7 +48,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         //方法二：互斥锁解决缓存击穿
         //Shop shop = queryWithPassMutex(id);
 
-        //方法三：逻辑过期解决缓存击穿
+        //方法三：逻辑过期解决缓存击穿（热点key）
         //Shop shop = queryWithPassMutex(id);
         //方法五：用工具类击穿,测试可以把时间调短比如 20L s
         Shop shop = cacheClient

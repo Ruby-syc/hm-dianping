@@ -9,6 +9,7 @@ import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +25,6 @@ import java.time.LocalDateTime;
  * @since 2021-12-22
  */
 @Service
-@Transactional
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
     @Resource
@@ -51,8 +51,22 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             //库存不足
             return Result.fail("库存不足");
         }
+        Long userId = UserHolder.getUser().getId();
+        //放在方法里，因为被事务管理有可能释放锁之后，可能发生线程安全问题，放在这里，确保事务已经提交数据库了，再释放锁
+        //获取锁之后创建的事务，事务提交之后，再释放锁，避免安全问题
+        synchronized(userId.toString().intern()) {
+            //拿到事务代理对象
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        }
+    }
+    //同步锁 放在方法上就是所有人公用一把锁，性能不高，把锁放在id上性能会比较好，事务生效，是对这个类做了动态代理，完成事务处理，上面的调用的是this.方法，没有事务功能，spring事务会失效
+    @Transactional
+    public Result createVoucherOrder(Long voucherId) {
         //5.一人一单
         Long userId = UserHolder.getUser().getId();
+        //tostring，值一样，但是底层都是新对象，intern 返回字符串的规范表示
+        //synchronized(userId.toString().intern()) {}//包到最后，这个可能线程不安全，提到外面去了
         //5.1.查询订单
         int count = query().eq("user_id", userId).eq("voucher_id", voucherId).count();
         //5.2.判断是否存在
@@ -83,6 +97,5 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         //7.返回订单id
         return Result.ok(orderId);
     }
-
 
 }

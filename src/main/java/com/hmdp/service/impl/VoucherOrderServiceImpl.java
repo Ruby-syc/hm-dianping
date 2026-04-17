@@ -8,8 +8,10 @@ import com.hmdp.mapper.VoucherOrderMapper;
 import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.springframework.aop.framework.AopContext;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +33,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private ISeckillVoucherService seckillVoucherService;
     @Resource
     private RedisIdWorker redisIdWorker;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Result seckillVoucher(Long voucherId) {
@@ -52,15 +56,34 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("库存不足");
         }
         Long userId = UserHolder.getUser().getId();
-        //放在方法里，因为被事务管理有可能释放锁之后，可能发生线程安全问题，放在这里，确保事务已经提交数据库了，再释放锁
+        //方法二：用redis实现分布式锁
+        //创建锁对象
+        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, stringRedisTemplate);
+        //获取锁
+        boolean isLock = lock.tryLock(500);
+        //判断是否获取锁成功
+        if(!isLock){
+            //获取锁失败，返回错误或重试
+            return Result.fail("不允许重复下单");
+        }
+        try {
+            //获取代理对象（事务）
+            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+            return proxy.createVoucherOrder(voucherId);
+        } finally {
+            //释放锁
+            lock.unlock();
+        }
+
+        //方法一：放在方法里，因为被事务管理有可能释放锁之后，可能发生线程安全问题，放在这里，确保事务已经提交数据库了，再释放锁
         //获取锁之后创建的事务，事务提交之后，再释放锁，避免安全问题
-        synchronized(userId.toString().intern()) {
+        /*synchronized(userId.toString().intern()) {
             //拿到事务代理对象
             IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
             return proxy.createVoucherOrder(voucherId);
-        }
+        }*/
     }
-    //同步锁 放在方法上就是所有人公用一把锁，性能不高，把锁放在id上性能会比较好，事务生效，是对这个类做了动态代理，完成事务处理，上面的调用的是this.方法，没有事务功能，spring事务会失效
+    //同步锁 放在方法上就是所有人公用一把锁，性能不高，把锁放在id上，性能会比较好，事务生效，是对这个类做了动态代理，完成事务处理，上面的调用的是this.方法，没有事务功能，spring事务会失效
     @Transactional
     public Result createVoucherOrder(Long voucherId) {
         //5.一人一单

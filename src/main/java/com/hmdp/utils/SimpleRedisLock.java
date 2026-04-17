@@ -1,9 +1,12 @@
 package com.hmdp.utils;
 
 import cn.hutool.core.lang.UUID;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import javax.annotation.Resource;
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 public class SimpleRedisLock implements ILock {
@@ -20,6 +23,15 @@ public class SimpleRedisLock implements ILock {
 
     private static final String KEY_PREFIX = "lock:";
     private static final String ID_PREFIX = UUID.randomUUID().toString(true) + "-";//true 把uuid里面的横线去除掉
+    //提前初始化
+    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT;
+    static{
+        UNLOCK_SCRIPT = new DefaultRedisScript<>();
+        //调用脚本，设置脚本位置，在classpath下找
+        UNLOCK_SCRIPT.setLocation(new ClassPathResource("unlock.lua"));
+        //配一下返回值
+        UNLOCK_SCRIPT.setResultType(Long.class);
+    }
 
     @Override
     public boolean tryLock(long timeoutSec) {
@@ -35,7 +47,17 @@ public class SimpleRedisLock implements ILock {
         return Boolean.TRUE.equals(success);
     }
 
+
     @Override
+    public void unlock() {
+       //调用LUA脚本，把key变成单元素集合
+        stringRedisTemplate.execute(
+                UNLOCK_SCRIPT,
+                Collections.singletonList(KEY_PREFIX + name),
+                ID_PREFIX + Thread.currentThread().getId());
+    }
+
+   /* @Override
     public void unlock() {
         //获取线程标识
         String threadId = ID_PREFIX + Thread.currentThread().getId();
@@ -46,5 +68,5 @@ public class SimpleRedisLock implements ILock {
             //释放锁
             stringRedisTemplate.delete(KEY_PREFIX + name);
         }
-    }
+    }*/
 }

@@ -35,7 +35,7 @@ public class SimpleRedisLock implements ILock {
 
     @Override
     public boolean tryLock(long timeoutSec) {
-        //获取线程标识
+        //获取线程标示
         //long threadId = Thread.currentThread().getId();
         String threadId =ID_PREFIX + Thread.currentThread().getId();
         //获取锁
@@ -59,9 +59,9 @@ public class SimpleRedisLock implements ILock {
 
    /* @Override
     public void unlock() {
-        //获取线程标识
+        //获取线程标示
         String threadId = ID_PREFIX + Thread.currentThread().getId();
-        //获取锁中的标识
+        //获取锁中的标示
         String id = stringRedisTemplate.opsForValue().get(KEY_PREFIX + name);
         //判断是否一致
         if (threadId.equals(id)) {
